@@ -1,40 +1,64 @@
-import { createClient } from '@/lib/supabase/server'
+'use client'
+
+export const dynamic = 'force-dynamic'
+
+import { useState, useEffect, useCallback } from 'react'
 import AppLayout from '@/components/AppLayout'
+import { createClient } from '@/lib/supabase/client'
 
-export default async function DashboardPage() {
-  const supabase = await createClient()
-  const hoje = new Date().toISOString().split('T')[0]
-  const mesAtual = hoje.slice(0, 7)
+const supabase = createClient()
 
-  const [
-    { count: entradasHoje },
-    { count: cargasMes },
-    { data: contas },
-    { data: comprasCombuivel },
-    { data: saidasCombustivel },
-    { data: ultimasEntradas },
-  ] = await Promise.all([
-    supabase.from('entradas_madeira').select('*', { count: 'exact', head: true }).eq('data', hoje),
-    supabase.from('carregamentos_cavaco').select('*', { count: 'exact', head: true }).gte('data', mesAtual + '-01'),
-    supabase.from('contas_pagar').select('valor, status, data_vencimento').eq('status', 'pendente'),
-    supabase.from('combustivel_compras').select('qtd_litros'),
-    supabase.from('combustivel_saidas').select('qtd_litros'),
-    supabase.from('entradas_madeira').select(`
-      id, data, tipo_medicao, placa, peso_liquido, volume_estereo,
-      fornecedores(nome), motoristas(nome)
-    `).order('created_at', { ascending: false }).limit(8),
-  ])
+export default function DashboardPage() {
+  const [stats, setStats] = useState({
+    entradasHoje: 0,
+    cargasMes: 0,
+    contasPendentes: 0,
+    totalPendente: 0,
+    estoqueCombustivel: 0,
+  })
+  const [ultimasEntradas, setUltimasEntradas] = useState<any[]>([])
 
-  const totalPendente = (contas || []).reduce((acc, c) => acc + Number(c.valor), 0)
-  const totalComprado = (comprasCombuivel || []).reduce((acc, c) => acc + Number(c.qtd_litros), 0)
-  const totalSaiu = (saidasCombustivel || []).reduce((acc, c) => acc + Number(c.qtd_litros), 0)
-  const estoqueCombustivel = totalComprado - totalSaiu
+  const load = useCallback(async () => {
+    const hoje = new Date().toISOString().split('T')[0]
+    const mesAtual = hoje.slice(0, 7) + '-01'
+
+    const [
+      { count: entradasHoje },
+      { count: cargasMes },
+      { data: contas },
+      { data: compras },
+      { data: saidas },
+      { data: entradas },
+    ] = await Promise.all([
+      supabase.from('entradas_madeira').select('*', { count: 'exact', head: true }).eq('data', hoje),
+      supabase.from('carregamentos_cavaco').select('*', { count: 'exact', head: true }).gte('data', mesAtual),
+      supabase.from('contas_pagar').select('valor').eq('status', 'pendente'),
+      supabase.from('combustivel_compras').select('qtd_litros'),
+      supabase.from('combustivel_saidas').select('qtd_litros'),
+      supabase.from('entradas_madeira').select('id, data, tipo_medicao, placa, peso_liquido, volume_estereo, fornecedor_id, motorista_id').order('created_at', { ascending: false }).limit(8),
+    ])
+
+    const totalPendente = (contas || []).reduce((acc, c) => acc + Number(c.valor), 0)
+    const totalComprado = (compras || []).reduce((acc, c) => acc + Number(c.qtd_litros), 0)
+    const totalSaiu = (saidas || []).reduce((acc, c) => acc + Number(c.qtd_litros), 0)
+
+    setStats({
+      entradasHoje: entradasHoje || 0,
+      cargasMes: cargasMes || 0,
+      contasPendentes: (contas || []).length,
+      totalPendente,
+      estoqueCombustivel: totalComprado - totalSaiu,
+    })
+    setUltimasEntradas(entradas || [])
+  }, [])
+
+  useEffect(() => { load() }, [load])
 
   const kpis = [
-    { label: 'Entradas Hoje', value: entradasHoje || 0, icon: '🪵', color: '#1a5c2e', bg: '#e8f5ec' },
-    { label: 'Cargas no Mês', value: cargasMes || 0, icon: '🚛', color: '#1565a0', bg: '#e3f0fd' },
-    { label: 'Contas Pendentes', value: (contas || []).length, icon: '💰', color: '#8b0000', bg: '#fce8e8', sub: `R$ ${totalPendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
-    { label: 'Estoque Combustível', value: `${estoqueCombustivel.toFixed(0)} L`, icon: '⛽', color: '#5c4a00', bg: '#fffbe6' },
+    { label: 'Entradas Hoje', value: stats.entradasHoje, icon: '🪵', color: '#1a5c2e', bg: '#e8f5ec' },
+    { label: 'Cargas no Mês', value: stats.cargasMes, icon: '🚛', color: '#1565a0', bg: '#e3f0fd' },
+    { label: 'Contas Pendentes', value: stats.contasPendentes, icon: '💰', color: '#8b0000', bg: '#fce8e8', sub: `R$ ${stats.totalPendente.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` },
+    { label: 'Estoque Combustível', value: `${stats.estoqueCombustivel.toFixed(0)} L`, icon: '⛽', color: '#5c4a00', bg: '#fffbe6' },
   ]
 
   return (
@@ -47,7 +71,6 @@ export default async function DashboardPage() {
           </p>
         </div>
 
-        {/* KPIs */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 16, marginBottom: 28 }}>
           {kpis.map((k, i) => (
             <div key={i} style={{ background: k.bg, borderRadius: 12, padding: '20px 18px', borderLeft: `4px solid ${k.color}` }}>
@@ -59,20 +82,17 @@ export default async function DashboardPage() {
           ))}
         </div>
 
-        {/* Últimas entradas */}
         <div className="card">
           <h3 style={{ margin: '0 0 16px', fontSize: 14, fontWeight: 700, color: '#0a2f1a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             🪵 Últimas Entradas de Madeira
           </h3>
-          {(!ultimasEntradas || ultimasEntradas.length === 0) ? (
+          {ultimasEntradas.length === 0 ? (
             <div className="empty-state">Nenhuma entrada registrada ainda.</div>
           ) : (
             <div className="table-wrapper" style={{ boxShadow: 'none' }}>
               <table>
                 <thead>
-                  <tr>
-                    {['Data', 'Tipo', 'Fornecedor', 'Placa', 'Quantidade'].map(h => <th key={h}>{h}</th>)}
-                  </tr>
+                  <tr>{['Data', 'Tipo', 'Placa', 'Quantidade'].map(h => <th key={h}>{h}</th>)}</tr>
                 </thead>
                 <tbody>
                   {ultimasEntradas.map((e: any) => (
@@ -83,13 +103,11 @@ export default async function DashboardPage() {
                           {e.tipo_medicao === 'peso' ? '⚖️ Peso' : '📐 Estéreo'}
                         </span>
                       </td>
-                      <td>{(e.fornecedores as any)?.nome || '—'}</td>
                       <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{e.placa || '—'}</td>
                       <td style={{ fontWeight: 700, color: '#1a5c2e' }}>
                         {e.tipo_medicao === 'peso'
                           ? `${Number(e.peso_liquido || 0).toFixed(3)} t`
-                          : `${Number(e.volume_estereo || 0).toFixed(3)} m³`
-                        }
+                          : `${Number(e.volume_estereo || 0).toFixed(3)} m³`}
                       </td>
                     </tr>
                   ))}
@@ -102,4 +120,3 @@ export default async function DashboardPage() {
     </AppLayout>
   )
 }
-export const dynamic = 'force-dynamic'

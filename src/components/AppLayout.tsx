@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
@@ -19,22 +19,46 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const router = useRouter()
   const [collapsed, setCollapsed] = useState(false)
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) {
+        router.replace('/login')
+      } else {
+        setChecking(false)
+      }
+    })
+  }, [router])
 
   async function logout() {
     const supabase = createClient()
     await supabase.auth.signOut()
-    router.push('/login')
-    router.refresh()
+    router.replace('/login')
+  }
+
+  if (checking) {
+    return (
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f5f7f5' }}>
+        <div style={{ fontSize: 14, color: '#888' }}>Carregando...</div>
+      </div>
+    )
   }
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh', fontFamily: 'system-ui, sans-serif', background: '#f5f7f5' }}>
       {/* Sidebar */}
       <div style={{
-        width: collapsed ? 64 : 240, minHeight: '100vh',
+        width: collapsed ? 64 : 240,
+        minHeight: '100vh',
         background: 'linear-gradient(180deg, #0a2f1a 0%, #1a5c2e 100%)',
-        transition: 'width 0.25s ease', overflow: 'hidden', flexShrink: 0,
-        display: 'flex', flexDirection: 'column', position: 'fixed',
+        transition: 'width 0.25s ease',
+        overflow: 'hidden',
+        flexShrink: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'fixed',
         left: 0, top: 0, bottom: 0, zIndex: 100
       }}>
         {/* Logo */}

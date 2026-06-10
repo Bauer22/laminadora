@@ -1,28 +1,34 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 
 export default function LoginPage() {
   const router = useRouter()
-  const supabase = createClient()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) router.replace('/dashboard')
+    })
+  }, [router])
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
     setError('')
+    const supabase = createClient()
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
       setError('Email ou senha inválidos')
       setLoading(false)
     } else {
-      router.push('/dashboard')
-      router.refresh()
+      router.replace('/dashboard')
     }
   }
 
@@ -53,7 +59,7 @@ export default function LoginPage() {
             <input
               value={email} onChange={e => setEmail(e.target.value)}
               type="email" required className="inp"
-              placeholder="usuario@laminadora.com"
+              placeholder="usuario@email.com"
             />
           </div>
           <div style={{ marginBottom: 24 }}>
